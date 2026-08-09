@@ -1,0 +1,13 @@
+.Rproj.user/
+.Rhistory
+.RData
+.RDataTmp*
+.Ruserdata
+.Rapp.history
+.DS_Store
+output/
+*.log
+
+data/.DS_Store
+data/.Rhistory
+data/.Rapp.history
