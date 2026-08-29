@@ -5,7 +5,9 @@
 #   plumber::plumb("plumber.R") |> plumber::pr_run(port = 8000)
 
 library(plumber)
-library(tidyverse)
+library(dplyr)
+library(tibble)
+
 
 source("R/allometry.R")
 source("R/spatial_functions.R")
@@ -14,8 +16,21 @@ source("R/growth.R")
 source("R/mortality.R")
 source("R/recruitment.R")
 
-# ---- helper: load a real BCI census file --------------------------------
+# ---- helper: load a real BCI census file (cached, trimmed) --------------
+# Caches each census in memory after its first load, so repeated requests
+# don't re-read and re-parse the same ~423k-row file from disk every single
+# time 
+
+# Additionally data set is trimmed to only  6 columns this app actually uses 
+
+.census_cache <- new.env(parent = emptyenv())
+
 load_census <- function(census_number) {
+  cache_key <- as.character(census_number)
+  if (!is.null(.census_cache[[cache_key]])) {
+    return(.census_cache[[cache_key]])
+  }
+
   path <- sprintf("data/bci.tree%d.rdata", census_number)
   if (!file.exists(path)) {
     stop(sprintf("Census file not found: %s", path))
@@ -34,7 +49,11 @@ load_census <- function(census_number) {
       ))
     }
   }
-  get(obj_name, envir = e)
+  raw <- get(obj_name, envir = e)
+  raw <- raw[, c("treeID", "sp", "gx", "gy", "dbh", "status")]
+
+  .census_cache[[cache_key]] <- raw
+  raw
 }
 
 # ---- Serve the front-end -----------------------------------------------
@@ -46,17 +65,21 @@ list()
 species_params <- read.csv("data/species_allometry_params.csv")
 
 # ---- Full species pool (all ~307 species, from real census data) ----------
-full_species_pool <- tryCatch({
-  raw <- load_census(1)
-  alive_rows <- raw[raw$status %in% c("A", "AD", "AM", "AR"), ]
-  codes <- unique(alive_rows$sp)
-  codes <- codes[!is.na(codes) & codes != ""]
-  sort(codes)
-}, error = function(e) {
-  message("Could not load census 1 to build the full species pool (", conditionMessage(e),
-          "). Falling back to the 162 species in species_allometry_params.csv.")
-  sort(unique(species_params$species))
-})
+
+build_full_species_pool <- function() {
+  tryCatch({
+    raw <- load_census(1)
+    alive_rows <- raw[raw$status %in% c("A", "AD", "AM", "AR"), ]
+    codes <- unique(alive_rows$sp)
+    codes <- codes[!is.na(codes) & codes != ""]
+    sort(codes)
+  }, error = function(e) {
+    message("Could not load census 1 to build the full species pool (", conditionMessage(e),
+            "). Falling back to the 162 species in species_allometry_params.csv.")
+    sort(unique(species_params$species))
+  })
+}
+full_species_pool <- build_full_species_pool()
 message(sprintf("Full species pool loaded: %d species (%d have real fitted allometry).",
                  length(full_species_pool), sum(full_species_pool %in% species_params$species)))
 
@@ -80,32 +103,50 @@ resolve_species_subset <- function(names) {
     )
 }
 
+# Stratified species sample:
+stratified_species_sample <- function(species_names, n_trees) {
+  n_species <- length(species_names)
+  if (n_species == 0) return(character(0))
+  
+  if (n_trees <= n_species) {
+    # Sample without replacement so we cover as many distinct species as the budget allows, 
+    # rather than letting a few species dominate purely by sampling order.
+    return(sample(species_names, n_trees))
+  }
+  
+  guaranteed <- species_names                          # exactly one of each
+  filler     <- sample(species_names, n_trees - n_species, replace = TRUE)
+  
+  sample(c(guaranteed, filler))  # shuffle so the guaranteed slots aren't clustered at low id values
+}
 
 # ---- helper: procedural initial layout ------------------------------------
-# Grid-ish placement with soft cluster pull, so the demo is self-contained
-# and doesn't depend on loading the full bci data
-generate_layout <- function(n_trees, plot_width, plot_height, n_clusters = 10) {
-  clusters <- tibble(
-    cx = runif(n_clusters, 0, plot_width),
-    cy = runif(n_clusters, 0, plot_height)
-  )
-  cluster_id <- sample(seq_len(n_clusters), n_trees, replace = TRUE)
-
-  grid_n <- ceiling(sqrt(n_trees))
-  gx <- rep(seq(0, plot_width,  length.out = grid_n), each  = grid_n)[seq_len(n_trees)]
-  gy <- rep(seq(0, plot_height, length.out = grid_n), times = grid_n)[seq_len(n_trees)]
-
-  x <- 0.55 * gx + 0.45 * clusters$cx[cluster_id] + rnorm(n_trees, 0, plot_width  * 0.015)
-  y <- 0.55 * gy + 0.45 * clusters$cy[cluster_id] + rnorm(n_trees, 0, plot_height * 0.015)
-
+generate_layout <- function(n_trees, plot_width, plot_height,
+                            n_clusters = 15, cluster_fraction = 0.25) {
+  x <- runif(n_trees, 0, plot_width)
+  y <- runif(n_trees, 0, plot_height)
+  
+  n_clustered <- round(n_trees * cluster_fraction)
+  if (n_clustered > 0) {
+    hotspots <- tibble(
+      cx = runif(n_clusters, 0, plot_width),
+      cy = runif(n_clusters, 0, plot_height)
+    )
+    clustered_idx    <- sample(seq_len(n_trees), n_clustered)
+    assigned_cluster <- sample(seq_len(n_clusters), n_clustered, replace = TRUE)
+    x[clustered_idx] <- hotspots$cx[assigned_cluster] + rnorm(n_clustered, 0, plot_width  * 0.02)
+    y[clustered_idx] <- hotspots$cy[assigned_cluster] + rnorm(n_clustered, 0, plot_height * 0.02)
+  }
+  
   tibble(
     x = pmin(pmax(x, 0), plot_width),
     y = pmin(pmax(y, 0), plot_height)
   )
 }
 
+
+
 # ---- CORS ------------------------------------------------------------------
-# Needed so index.html (opened locally / served separately) can call this API
 #* @filter cors
 function(req, res) {
   res$setHeader("Access-Control-Allow-Origin", "*")
@@ -138,10 +179,6 @@ function(n_new_trees = 100, n_new_species = 0, new_species_list = NULL,
 
   existing_species <- if (is.null(existing_species)) character(0) else existing_species
 
-  # Species available for the NEW trees: whatever is already in the forest,
-  # plus any newly requested species (random pick from the full ~307 pool,
-  # or a specific list)
-  
   new_names <- character(0)
   if (!is.null(new_species_list) && length(new_species_list) > 0) {
     new_names <- new_species_list
@@ -159,7 +196,7 @@ function(n_new_trees = 100, n_new_species = 0, new_species_list = NULL,
 
   new_trees <- tibble(
     id       = seq(next_id, next_id + n_new_trees - 1),
-    species  = sample(species_pool$species, n_new_trees, replace = TRUE),
+    species  = stratified_species_sample(species_pool$species, n_new_trees),
     x        = layout$x,
     y        = layout$y,
     dbh_cm   = pmin(pmax(rlnorm(n_new_trees, meanlog = log(5), sdlog = 0.9), 1), 80),
@@ -169,7 +206,6 @@ function(n_new_trees = 100, n_new_species = 0, new_species_list = NULL,
 
   new_trees <- attach_species_params(new_trees, species_pool)
   new_trees <- update_allometry(new_trees)
-  # Not yet shaded — will get a real value on the next /step, same as recruits.
   new_trees$shading <- 0
   new_trees$overlap <- 0
 
@@ -189,13 +225,10 @@ function(census = 1, n_trees = 2000, selected_species = NULL, plot_width = 1000,
 
   raw <- load_census(census)
 
-  # Confirmed against BCI's official data documentation: A/AD/AM/AR all mean
-  # "alive" (AD/AR are rare edge-case that are to be interpreated the same as A). 
-  # D = dead, M = missing/ambiguous, P = not yet recruited at this census — all excluded here.
   census_data <- raw |>
     filter(status %in% c("A", "AD", "AM", "AR")) |>
     filter(!is.na(dbh) & !is.na(gx) & !is.na(gy)) |>
-    mutate(dbh = dbh / 10) |>  # mm -> cm, same convention as main.R
+    mutate(dbh = dbh / 10) |>
     rename(id = treeID, x = gx, y = gy, species = sp, dbh_cm = dbh) |>
     filter(dbh_cm > 0, x >= 0, x <= plot_width, y >= 0, y <= plot_height)
 
@@ -216,9 +249,6 @@ function(census = 1, n_trees = 2000, selected_species = NULL, plot_width = 1000,
     slice_sample(n = 1) |>
     ungroup()
 
-  # If there are more species than the tree budget allows, we can't
-  # guarantee full coverage — fall back to covering as many species as
-  # n_trees allows, chosen randomly, rather than silently exceeding budget.
   if (nrow(one_per_species) > n_trees) {
     one_per_species <- one_per_species |> slice_sample(n = n_trees)
   }
@@ -235,9 +265,6 @@ function(census = 1, n_trees = 2000, selected_species = NULL, plot_width = 1000,
     select(species, x, y, dbh_cm) |>
     mutate(alive = TRUE, age_days = 0, id = row_number())
 
-  # attach_species_params() already falls back to global medians for any
-  # species code not present in species_allometry_params.csv, so real
-  # census species not in our 162 are handled 
   forest <- attach_species_params(forest, species_params)
   forest <- update_allometry(forest)
   forest <- calculate_shading(forest)
@@ -276,7 +303,7 @@ function(n_trees = 2000, n_species = 8, selected_species = NULL, plot_width = 10
 
   forest <- tibble(
     id       = seq_len(n_trees),
-    species  = sample(species_subset$species, n_trees, replace = TRUE),
+    species  = stratified_species_sample(species_subset$species, n_trees),
     x        = layout$x,
     y        = layout$y,
     dbh_cm   = pmin(pmax(rlnorm(n_trees, meanlog = log(5), sdlog = 0.9), 1), 80),
@@ -305,6 +332,14 @@ function(req) {
   sim_config     <- body$sim_config
   species_subset <- as_tibble(body$species_params)
 
+  # since species_params already exist, instead of duplicating the results
+  # drop the column, and let it recalculate
+  # a little redundant atm
+  
+  forest <- forest |>
+    select(-any_of(c("crown_a", "crown_b", "height_a", "height_b", "height_k")))
+  forest <- attach_species_params(forest, species_subset)
+
   forest <- update_allometry(forest)
   forest <- calculate_shading(forest)
   forest <- update_growth(forest, sim_config)
@@ -316,7 +351,7 @@ function(req) {
   if (deaths > 0) {
     forest <- recruit_trees(forest, sim_config, species_subset)
   }
-  forest <- update_allometry(forest)  # always refresh, so crown/height reflect this step's growth + any new recruits
+  forest <- update_allometry(forest)
 
   list(
     forest = forest,

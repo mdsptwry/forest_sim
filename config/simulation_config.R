@@ -26,7 +26,7 @@ sim_config <- list(
   plot_height = 500,  # meters
   
   # spatial settings
-  quad_size = 46,     # quadrant size for shading
+  # quad_size = 46,     # quadrant size for shading
   
   # initial conditions
   inital_census = "census8", # which census to start
