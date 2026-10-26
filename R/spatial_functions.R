@@ -48,9 +48,17 @@ calculate_overlaps_knn <- function(data, k_neighbors = 50) {
   
   # de-duplicate symmetric pairs (i,j) and (j,i) -> keep one direction only,
   # we'll still compute both g_i and g_j from that single row
-  pair_key <- ifelse(idx_self < idx_nbr,
-                     paste(idx_self, idx_nbr, sep = "_"),
-                     paste(idx_nbr, idx_self, sep = "_"))
+  # pair_key <- ifelse(idx_self < idx_nbr,
+  #                    paste(idx_self, idx_nbr, sep = "_"),
+  #                    paste(idx_nbr, idx_self, sep = "_"))
+  # dup <- duplicated(pair_key)
+  # idx_self <- idx_self[!dup]
+  # idx_nbr  <- idx_nbr[!dup]
+  # d_vec    <- d_vec[!dup]
+  
+  lo <- pmin(idx_self, idx_nbr)
+  hi <- pmax(idx_self, idx_nbr)
+  pair_key <- lo * (n + 1L) + hi
   dup <- duplicated(pair_key)
   idx_self <- idx_self[!dup]
   idx_nbr  <- idx_nbr[!dup]

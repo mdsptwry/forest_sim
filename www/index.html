@@ -231,6 +231,86 @@
     background: var(--moss);
     transition: width .25s ease;
   }
+  /* ---- Forest / Summary tabs ---- */
+  #stage{ flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; }
+  #tabs{
+    display:flex; gap:2px; flex-shrink:0;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  #tabs .tab{
+    flex: none;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 11px 16px 9px 16px;
+    margin-bottom: -1px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  #tabs .tab:hover{ color: var(--text); border-bottom-color: var(--line); }
+  #tabs .tab.active{ color: var(--moss); border-bottom-color: var(--moss); }
+  #views{ flex:1; display:flex; min-height:0; min-width:0; }
+  .view.hidden{ display:none !important; }
+
+  #summary-view{
+    flex:1; min-width:0; min-height:0;
+    overflow-y:auto;
+    padding: 16px 20px 28px 20px;
+    background: var(--bg);
+  }
+  #summary-head{
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    margin-bottom: 14px;
+  }
+  #summary-status{
+    font-family:'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-muted);
+  }
+  #summary-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+    gap: 14px;
+  }
+  .chart-card{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px 10px 14px;
+    min-width: 0;
+  }
+  .chart-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
+  .chart-title{ font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:14px; }
+  .chart-sub{ font-family:'IBM Plex Mono', monospace; font-size:10px; color: var(--text-muted); margin-top:2px; line-height:1.4; }
+  .chart-head button{ flex:none; padding: 5px 9px; font-size: 10px; }
+  .chart-body{ position:relative; height: 230px; }
+  .chart-empty{
+    position:absolute; inset:0; display:none;
+    align-items:center; justify-content:center; text-align:center;
+    padding: 0 24px;
+    font-family:'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-muted);
+    pointer-events:none;
+  }
+  #summary-view.is-empty .chart-empty{ display:flex; }
+
+  /* ---- Winners and losers card ---- */
+  .head-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+  .seg-wrap{ display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--text-muted); }
+  .seg{ display:inline-flex; border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+  .seg button{ border:none; border-radius:0; padding:5px 9px; font-size:10px; background:transparent; color:var(--text-muted); }
+  .seg button + button{ border-left:1px solid var(--line); }
+  .seg button.on{ background:var(--moss); color:#0B1210; }
+  #winners-chips{ display:flex; gap:14px; flex-wrap:wrap; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--text-muted); margin-bottom:8px; min-height:14px; }
+  #winners-chips .g{ color:#7FB069; } #winners-chips .r{ color:#C9785D; } #winners-chips .x{ color:#D98D72; } #winners-chips .n{ color:var(--amber); }
+  #winners-chips b{ font-weight:600; }
+  #winners-scroll{ max-height:440px; overflow-y:auto; border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+  #winners-inner{ position:relative; width:100%; }
+  #winners-empty{ display:none; align-items:center; justify-content:center; text-align:center; height:160px; padding:0 24px;
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--text-muted); border:1px solid var(--line); border-radius:6px; }
+  #winners-foot{ font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--text-muted); margin-top:8px; line-height:1.5; }
+
   @media (max-width: 860px){
     main{ flex-direction: column; }
     #rail{ width: 100%; border-left:none; border-top:1px solid var(--line); max-height: 46vh; }
@@ -252,14 +332,20 @@
   </header>
 
   <main>
-    <div id="canvas-wrap">
+    <div id="stage">
+    <div id="tabs" role="tablist">
+      <button class="tab active" id="tab_forest"  role="tab" aria-selected="true"  aria-controls="canvas-wrap"   data-tab="forest">Forest</button>
+      <button class="tab"        id="tab_summary" role="tab" aria-selected="false" aria-controls="summary-view" data-tab="summary">Summary</button>
+    </div>
+    <div id="views">
+    <div id="canvas-wrap" class="view" role="tabpanel" aria-labelledby="tab_forest">
       <div id="canvas-inner">
         <canvas id="canvas"></canvas>
         <div id="readout">
           <div class="stat"><span class="stat-label">Step</span><span class="stat-value" id="stat_step">0</span></div>
           <div class="stat"><span class="stat-label">Years</span><span class="stat-value" id="stat_years">0</span></div>
           <div class="stat"><span class="stat-label">Alive</span><span class="stat-value" id="stat_alive">–</span></div>
-          <div class="stat"><span class="stat-label">Deaths This Step</span><span class="stat-value" id="stat_deaths">–</span></div>
+          <div class="stat"><span class="stat-label">Deaths</span><span class="stat-value" id="stat_deaths">–</span></div>
           <div class="stat"><span class="stat-label">Mean DBH</span><span class="stat-value" id="stat_dbh">–</span></div>
           <div class="stat"><span class="stat-label">Mean Shading</span><span class="stat-value" id="stat_shading">–</span></div>
         </div>
@@ -268,6 +354,74 @@
         <div class="section-title">Species</div>
         <div id="legend"></div>
       </div>
+    </div>
+
+    <div id="summary-view" class="view hidden is-empty" role="tabpanel" aria-labelledby="tab_summary">
+      <div id="summary-head">
+        <div class="eyebrow">Run summary · updates live after every step</div>
+        <div id="summary-status">Step 0 · baseline only</div>
+      </div>
+      <div id="summary-grid">
+        <div class="chart-card">
+          <div class="chart-head">
+            <div><div class="chart-title">Mean DBH</div><div class="chart-sub">cm, living trees (includes new recruits)</div></div>
+            <button type="button" class="dl" data-chart="dbh" title="Download this chart as a PNG">↓ PNG</button>
+          </div>
+          <div class="chart-body"><canvas id="chart_dbh"></canvas><div class="chart-empty">Run a step to see results</div></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head">
+            <div><div class="chart-title">Mean shading</div><div class="chart-sub">raw server value; new recruits count as 0 until shaded</div></div>
+            <button type="button" class="dl" data-chart="shading" title="Download this chart as a PNG">↓ PNG</button>
+          </div>
+          <div class="chart-body"><canvas id="chart_shading"></canvas><div class="chart-empty">Run a step to see results</div></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head">
+            <div><div class="chart-title">Turnover</div><div class="chart-sub">deaths per step as % of trees alive at the start of the step</div></div>
+            <button type="button" class="dl" data-chart="turnover" title="Download this chart as a PNG">↓ PNG</button>
+          </div>
+          <div class="chart-body"><canvas id="chart_turnover"></canvas><div class="chart-empty">Run a step to see results</div></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head">
+            <div><div class="chart-title">Species count</div><div class="chart-sub">distinct species among living trees</div></div>
+            <button type="button" class="dl" data-chart="richness" title="Download this chart as a PNG">↓ PNG</button>
+          </div>
+          <div class="chart-body"><canvas id="chart_richness"></canvas><div class="chart-empty">Run a step to see results</div></div>
+        </div>
+        <div class="chart-card" id="winners-card" style="grid-column: 1 / -1;">
+          <div class="chart-head">
+            <div><div class="chart-title">Species richness</div><div class="chart-sub" id="winners-sub">change in share of living trees since step 0, in percentage points</div></div>
+            <div class="head-actions">
+              <div class="seg-wrap"><span>Show per group</span>
+                <div class="seg" id="winners-depth" role="group" aria-label="Species shown per group">
+                  <button type="button" data-d="10">10</button>
+                  <button type="button" data-d="15" class="on">15</button>
+                  <button type="button" data-d="25">25</button>
+                  <button type="button" data-d="50">50</button>
+                  <button type="button" data-d="0">All</button>
+                </div>
+              </div>
+              <button type="button" class="dl" data-chart="winners" title="Download the full list as a PNG">↓ PNG</button>
+            </div>
+          </div>
+          <div id="winners-chips"></div>
+          <div id="winners-scroll"><div id="winners-inner"><canvas id="chart_winners"></canvas></div></div>
+          <div id="winners-empty">Run a step to see results</div>
+          <div id="winners-foot"></div>
+        </div>
+        <div class="chart-card" style="grid-column: 1 / -1;">
+          <div class="chart-head">
+            <div><div class="chart-title">DBH size classes</div><div class="chart-sub">share of living trees in each class, initial (step 0) vs current</div></div>
+            <button type="button" class="dl" data-chart="hist" title="Download this chart as a PNG">↓ PNG</button>
+          </div>
+          <div class="chart-body"><canvas id="chart_hist"></canvas><div class="chart-empty">Run a step to see results</div></div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:12px;">Dashed amber lines mark steps where trees were added with “Add Trees”.</div>
+    </div>
+    </div>
     </div>
 
     <div id="rail">
@@ -312,16 +466,19 @@
           <label class="field-label"><span>Species selection</span></label>
           <div style="display:flex; gap:14px; font-size:12px; margin:2px 0 8px 0;">
             <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-              <input type="radio" name="speciesMode" id="speciesModeRandom" checked style="accent-color:var(--moss);"> Random
+              <input type="radio" name="speciesMode" id="speciesModeAll" checked style="accent-color:var(--moss);"> All
+            </label>
+            <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+              <input type="radio" name="speciesMode" id="speciesModeRandom" style="accent-color:var(--moss);"> Random
             </label>
             <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
               <input type="radio" name="speciesMode" id="speciesModeSpecific" style="accent-color:var(--moss);"> Choose
             </label>
           </div>
         </div>
-        <div class="field" id="speciesCountField">
+        <div class="field" id="speciesCountField" style="display:none;">
           <label class="field-label"><span>Species count</span></label>
-          <input type="number" id="n_species" value="8" min="1" max="30" step="1">
+          <input type="number" id="n_species" value="8" min="1" max="400" step="1">
         </div>
         <div class="field" id="speciesPickerField" style="display:none;">
           <label class="field-label"><span>Pick species (ctrl/cmd-click for multiple)</span></label>
@@ -460,6 +617,7 @@
 
 </div>
 
+<script src="chart.umd.js"></script>
 <script>
 // If opened directly as a local file (file://), window.location.origin isn't
 // usable as an API address — fall back to localhost:8000. If served BY
@@ -484,6 +642,19 @@ let targetSteps = null;
 let recordHistory = false;
 let stepHistory = [];
 let allSpeciesNames = [];
+
+// ---- Request serialization ---------------------------------------------
+// /init, /step and /add_trees all read-modify-write the same client-side
+// forest. If two overlap (e.g. "add trees" clicked while a /step is in
+// flight), the step response can overwrite the newly added trees and client-
+// assigned IDs can collide with server-assigned recruit IDs. Running them
+// strictly one at a time through this chain removes that whole class of bug.
+let _chain = Promise.resolve();
+function enqueue(fn){
+  const run = _chain.then(fn);
+  _chain = run.catch(() => {});
+  return run;
+}
 
 function getTransitionMs(){
   const speed = +val('speed');
@@ -523,6 +694,11 @@ async function loadSpeciesList(){
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     allSpeciesNames = data.species || [];
+    if (allSpeciesNames.length){
+      const nSpeciesInput = document.getElementById('n_species');
+      nSpeciesInput.value = allSpeciesNames.length;
+      nSpeciesInput.max = allSpeciesNames.length;
+    }
     [document.getElementById('speciesPicker'), document.getElementById('addSpeciesPicker'), document.getElementById('censusSpeciesPicker')].forEach(sel => {
       sel.innerHTML = '';
       allSpeciesNames.forEach(sp => {
@@ -546,7 +722,8 @@ document.getElementById('addModeNone').addEventListener('change', updateAddSpeci
 document.getElementById('addModeRandom').addEventListener('change', updateAddSpeciesModeUI);
 document.getElementById('addModeSpecific').addEventListener('change', updateAddSpeciesModeUI);
 
-async function addTrees(){
+function addTrees(){ return enqueue(addTreesImpl); }
+async function addTreesImpl(){
   const n_new_trees = +val('n_add_trees');
   const mode = document.getElementById('addModeRandom').checked ? 'random'
              : document.getElementById('addModeSpecific').checked ? 'specific' : 'none';
@@ -594,6 +771,7 @@ async function addTrees(){
       mean_shading: avg(Array.from(treesById.values()), 'shading'),
       deaths: 0
     });
+    noteTreesAdded(data.new_trees.length);
     setStatus('connected', true);
   } catch(e){
     console.error('[add_trees error]', e);
@@ -624,14 +802,17 @@ document.getElementById('sourceProcedural').addEventListener('change', updateDat
 document.getElementById('sourceCensus').addEventListener('change', updateDataSourceUI);
 
 function updateSpeciesModeUI(){
+  const random   = document.getElementById('speciesModeRandom').checked;
   const specific = document.getElementById('speciesModeSpecific').checked;
-  document.getElementById('speciesCountField').style.display = specific ? 'none' : 'block';
+  document.getElementById('speciesCountField').style.display = random ? 'block' : 'none';
   document.getElementById('speciesPickerField').style.display = specific ? 'block' : 'none';
 }
+document.getElementById('speciesModeAll').addEventListener('change', updateSpeciesModeUI);
 document.getElementById('speciesModeRandom').addEventListener('change', updateSpeciesModeUI);
 document.getElementById('speciesModeSpecific').addEventListener('change', updateSpeciesModeUI);
 
-async function initSim(){
+function initSim(){ return enqueue(initSimImpl); }
+async function initSimImpl(){
   setStatus('connecting…', false);
   const n_trees = +val('n_trees');
   const useCensus = document.getElementById('sourceCensus').checked;
@@ -643,16 +824,25 @@ async function initSim(){
     payload = {census: +val('censusPicker'), n_trees, plot_width: PLOT_W, plot_height: PLOT_H};
     if (censusSelected.length) payload.selected_species = censusSelected;
   } else {
-    const n_species = +val('n_species');
+    const allMode      = document.getElementById('speciesModeAll').checked;
     const specificMode = document.getElementById('speciesModeSpecific').checked;
     const selected = specificMode
       ? Array.from(document.getElementById('speciesPicker').selectedOptions).map(o => o.value)
       : null;
     if (specificMode && (!selected || selected.length === 0)){
-      alert('Select at least one species, or switch back to Random.');
+      alert('Select at least one species, or switch back to All/Random.');
       setStatus('connected', true);
       return;
     }
+    // "All" sends the real, current pool size explicitly (from /species,
+    // already fetched into allSpeciesNames) rather than depending on a
+    // server-side default number that's easy to lose track of across edits.
+    if (allMode && allSpeciesNames.length === 0){
+      alert('Species list hasn\'t loaded yet — try again in a moment.');
+      setStatus('connected', true);
+      return;
+    }
+    const n_species = allMode ? allSpeciesNames.length : +val('n_species');
     url = `${API_BASE}/init`;
     payload = {n_trees, n_species, plot_width: PLOT_W, plot_height: PLOT_H};
     if (selected && selected.length) payload.selected_species = selected;
@@ -679,6 +869,7 @@ async function initSim(){
       anim.set(t.id, {sx:t.x, sy:t.y, sr:r, sa:1, tx:t.x, ty:t.y, tr:r, ta:1, t0:now, dur:1, mode:'normal'});
     });
     updateLegend();
+    resetMetrics(data.forest);
     updateReadout({n_alive: data.forest.length, mean_dbh: avg(data.forest,'dbh_cm'), mean_shading: avg(data.forest,'shading'), deaths:0});
     setStatus('connected', true);
   } catch(e){
@@ -687,7 +878,8 @@ async function initSim(){
   }
 }
 
-async function step(){
+function step(){ return enqueue(stepImpl); }
+async function stepImpl(){
   const sim_config = buildSimConfig();
   const forestArr = Array.from(treesById.values());
 
@@ -718,6 +910,8 @@ async function step(){
       });
       updateExportUI();
     }
+    try { recordStepMetrics(data, forestArr.length); }
+    catch(e){ console.error('[summary charts error — simulation itself is fine]', e); }
     updateReadout(data.metrics);
     setStatus('connected', true);
   } catch(e){
@@ -771,6 +965,7 @@ function currentVal(id, now){
 function easeInOutCubic(t){ return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
 
 function render(){
+  if (activeTab !== 'forest'){ requestAnimationFrame(render); return; }  // nothing to draw while Summary is showing
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
@@ -953,14 +1148,554 @@ document.getElementById('clearDataBtn').addEventListener('click', clearRecordedD
 function resizeCanvas(){
   const canvas = document.getElementById('canvas');
   const wrap = canvas.parentElement;
+  if (!wrap.clientWidth || !wrap.clientHeight) return;  // Forest tab hidden: keep the last real size
   canvas.width = wrap.clientWidth;
   canvas.height = wrap.clientHeight;
 }
-window.addEventListener('resize', resizeCanvas);
+// The resize event fires continuously while actively dragging a window edge —
+// reassigning canvas.width/height on every single one of those (which fully
+// clears/reinitializes the canvas bitmap each time) competing with the
+// ongoing render loop is a likely source of stutter during the drag itself,
+// even though the end result is correct once you let go. Debounce so the
+// actual resize only happens once dragging pauses, not on every intermediate
+// event.
+let resizeDebounceTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = setTimeout(resizeCanvas, 120);
+});
+
+// ======================================================================
+// Summary tab: per-step metrics history + Chart.js charts
+// ======================================================================
+const SUMMARY_BINS = [
+  {label:'<2',     lo:0,   hi:2},
+  {label:'2–5',    lo:2,   hi:5},
+  {label:'5–10',   lo:5,   hi:10},
+  {label:'10–20',  lo:10,  hi:20},
+  {label:'20–40',  lo:20,  hi:40},
+  {label:'40–80',  lo:40,  hi:80},
+  {label:'80–160', lo:80,  hi:160},
+  {label:'160+',   lo:160, hi:Infinity}
+];
+let metricsHistory = [];   // one row per step; row 0 is the step-0 baseline
+let addMarkers = [];       // {years, n}: "Add Trees" events after the run has started
+let newSpecies = {};       // species first seen after step 0: {code: {share, count}} (share at the moment it appeared)
+let activeTab = 'forest';
+const charts = {};
+
+function finiteOr(v, fallback){
+  if (v === null || v === undefined || v === '') return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function summarizeTrees(trees){
+  const bins = new Array(SUMMARY_BINS.length).fill(0);
+  const species = new Set();
+  const counts = {};
+  let n = 0, sumD = 0, nD = 0, sumS = 0, nS = 0;
+  trees.forEach(t => {
+    if (t.alive === false) return;
+    n++;
+    species.add(t.species);
+    counts[t.species] = (counts[t.species] || 0) + 1;
+    const d = Number(t.dbh_cm);
+    if (Number.isFinite(d)){
+      sumD += d; nD++;
+      for (let i = 0; i < SUMMARY_BINS.length; i++){
+        if (d >= SUMMARY_BINS[i].lo && d < SUMMARY_BINS[i].hi){ bins[i]++; break; }
+      }
+    }
+    const sh = Number(t.shading);
+    if (Number.isFinite(sh)){ sumS += sh; nS++; }
+  });
+  return {
+    n, bins, counts, richness: species.size,
+    meanDbh: nD ? sumD / nD : null,
+    meanShading: nS ? sumS / nS : null
+  };
+}
+
+function resetMetrics(forestArr){
+  const s = summarizeTrees(forestArr);
+  metricsHistory = [{step:0, years:0, ...s, turnoverPct:null}];
+  addMarkers = [];
+  newSpecies = {};
+  refreshSummary();
+}
+
+// Remember any species that was not in the step-0 baseline, with its share when first seen.
+function registerNewSpecies(summary){
+  const base = metricsHistory[0];
+  if (!base || !summary.n) return;
+  Object.keys(summary.counts).forEach(code => {
+    if (base.counts[code] || newSpecies[code]) return;
+    newSpecies[code] = {share: 100 * summary.counts[code] / summary.n, count: summary.counts[code]};
+  });
+}
+
+function recordStepMetrics(data, nBefore){
+  const s = summarizeTrees(data.forest);
+  const m = data.metrics || {};
+  const deaths = finiteOr(m.deaths, 0);
+  registerNewSpecies(s);
+  metricsHistory.push({
+    step: stepCount, years: yearsElapsed, ...s,
+    // Raw server values; the client-side figure is only a fallback if the
+    // server sent NaN (e.g. an empty forest).
+    meanDbh:     finiteOr(m.mean_dbh, s.meanDbh),
+    meanShading: finiteOr(m.mean_shading, s.meanShading),
+    turnoverPct: nBefore > 0 ? 100 * deaths / nBefore : null
+  });
+  refreshSummary();
+}
+
+function noteTreesAdded(n){
+  try {
+    if (stepCount === 0){
+      // Nothing has run yet: the additions simply become part of the baseline.
+      resetMetrics(Array.from(treesById.values()));
+      return;
+    }
+    registerNewSpecies(summarizeTrees(Array.from(treesById.values())));
+    const last = addMarkers[addMarkers.length - 1];
+    if (last && last.years === yearsElapsed) last.n += n;
+    else addMarkers.push({years: yearsElapsed, n});
+    refreshSummary();
+  } catch(e){ console.error('[summary: add-trees marker error]', e); }
+}
+
+function refreshSummary(){
+  const last = metricsHistory[metricsHistory.length - 1];
+  const el = document.getElementById('summary-status');
+  if (el && last){
+    el.textContent = metricsHistory.length > 1
+      ? `Step ${last.step} · ${last.years.toFixed(0)} yr · ${last.n} trees`
+      : 'Step 0 · baseline only';
+  }
+  document.getElementById('summary-view').classList.toggle('is-empty', metricsHistory.length < 2);
+  if (activeTab === 'summary'){
+    try { updateSummaryCharts(); } catch(e){ console.error('[summary charts error]', e); }
+  }
+}
+
+// ---- Chart.js plugins ---------------------------------------------------
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+// Opaque panel-coloured background, so PNG exports aren't transparent.
+const panelBackground = {
+  id: 'panelBackground',
+  beforeDraw(chart){
+    const {ctx, width, height} = chart;
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = cssVar('--panel') || '#121B17';
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  }
+};
+
+// Vertical dashed line at each "Add Trees" event.
+const addTreesMarkers = {
+  id: 'addTreesMarkers',
+  afterDatasetsDraw(chart){
+    if (!addMarkers.length) return;
+    const {ctx, chartArea, scales} = chart;
+    const x = scales.x;
+    if (!x) return;
+    const color = cssVar('--amber') || '#E3A857';
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.font = "10px 'IBM Plex Mono', monospace";
+    addMarkers.forEach(mk => {
+      const px = x.getPixelForValue(mk.years);
+      if (!Number.isFinite(px) || px < chartArea.left - 0.5 || px > chartArea.right + 0.5) return;
+      ctx.beginPath();
+      ctx.moveTo(px, chartArea.top);
+      ctx.lineTo(px, chartArea.bottom);
+      ctx.stroke();
+      const label = `+${mk.n} trees`;
+      const nearRight = px > chartArea.right - 70;
+      ctx.textAlign = nearRight ? 'right' : 'left';
+      ctx.fillText(label, px + (nearRight ? -5 : 5), chartArea.top + 11);
+    });
+    ctx.restore();
+  }
+};
+
+// ---- Chart construction ---------------------------------------------------
+function ensureCharts(){
+  if (charts.dbh) return true;
+  if (typeof Chart === 'undefined'){
+    document.getElementById('summary-status').textContent = 'Chart library failed to load (chart.umd.js)';
+    return false;
+  }
+  const muted = cssVar('--text-muted') || '#8FA398';
+  const line  = cssVar('--line') || '#24322B';
+  const moss  = cssVar('--moss') || '#7FB069';
+  const amber = cssVar('--amber') || '#E3A857';
+  const text  = cssVar('--text') || '#E7ECE6';
+
+  Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+  Chart.defaults.font.size = 10;
+  Chart.defaults.color = muted;
+
+  const tooltip = (fmt) => ({
+    backgroundColor: '#0B1210', borderColor: line, borderWidth: 1,
+    titleColor: text, bodyColor: text, displayColors: false, padding: 8,
+    callbacks: {
+      title: items => items.length ? `Year ${items[0].parsed.x}` : '',
+      label: item => fmt(item.parsed.y)
+    }
+  });
+
+  function timeChart(key, canvasId, label, color, yTitle, fmt, opts = {}){
+    charts[key] = new Chart(document.getElementById(canvasId), {
+      type: 'line',
+      data: { datasets: [{
+        label, data: [], borderColor: color, backgroundColor: color,
+        borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.2,
+        stepped: opts.stepped || false
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+          x: { type: 'linear', min: 0, title: {display: true, text: 'Years'},
+               grid: {color: line}, border: {color: line}, ticks: {precision: 0, maxTicksLimit: 9} },
+          y: { title: {display: true, text: yTitle}, beginAtZero: !!opts.zero,
+               grace: opts.zero ? '8%' : '5%',
+               grid: {color: line}, border: {color: line},
+               ticks: opts.int ? {precision: 0} : {} }
+        },
+        plugins: { legend: {display: false}, tooltip: tooltip(fmt) }
+      },
+      plugins: [panelBackground, addTreesMarkers]
+    });
+  }
+
+  timeChart('dbh',      'chart_dbh',      'Mean DBH',      moss,      'cm',              v => `${v.toFixed(2)} cm`);
+  timeChart('shading',  'chart_shading',  'Mean shading',  '#C98A3B', 'mean shading',    v => v.toFixed(3));
+  timeChart('turnover', 'chart_turnover', 'Turnover',      '#B5654A', '% of trees',      v => `${v.toFixed(1)}% of trees died`, {zero: true});
+  timeChart('richness', 'chart_richness', 'Species',       '#5B8A72', 'species',         v => `${v} species`, {int: true});
+
+  charts.hist = new Chart(document.getElementById('chart_hist'), {
+    type: 'bar',
+    data: {
+      labels: SUMMARY_BINS.map(b => b.label),
+      datasets: [
+        { label: 'Initial (step 0)', data: [], backgroundColor: '#4F6D5A', borderColor: '#4F6D5A', borderWidth: 0, borderRadius: 2 },
+        { label: 'Current',          data: [], backgroundColor: moss,      borderColor: moss,      borderWidth: 0, borderRadius: 2 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { title: {display: true, text: 'DBH class (cm)'}, grid: {display: false}, border: {color: line} },
+        y: { title: {display: true, text: '% of living trees'}, beginAtZero: true, grace: '5%',
+             grid: {color: line}, border: {color: line} }
+      },
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end',
+                  labels: { boxWidth: 10, boxHeight: 10, color: muted } },
+        tooltip: { backgroundColor: '#0B1210', borderColor: line, borderWidth: 1,
+                   titleColor: text, bodyColor: text, padding: 8,
+                   callbacks: { label: item => `${item.dataset.label}: ${item.parsed.y.toFixed(1)}%` } }
+      }
+    },
+    plugins: [panelBackground]
+  });
+  return true;
+}
+
+
+// ---- Winners and losers (species share, by tree count) ------------------------
+let winnersDepth = 15;        // per group; 0 = All
+let winnersList = [];         // rows currently drawn (read by the plugins and tooltip)
+const WIN_ROW = 19;
+let winnersHatch = null;
+
+function winnersData(){
+  const h = metricsHistory;
+  if (h.length < 2) return {msg: 'Run a step to see results', rows: [], nStart: 0};
+  const base = h[0], cur = h[h.length - 1];
+  const codes = new Set([...Object.keys(base.counts), ...Object.keys(cur.counts), ...Object.keys(newSpecies)]);
+  const nStart = Object.keys(base.counts).length;
+  if (codes.size <= 1) return {msg: 'Only one species in this forest, so there is nothing to compare.', rows: [], nStart};
+  const rows = [];
+  codes.forEach(code => {
+    const isNew = !base.counts[code] && !!newSpecies[code];
+    const startCount = base.counts[code] || (isNew ? newSpecies[code].count : 0);
+    const start = isNew ? newSpecies[code].share : (base.n > 0 ? 100 * (base.counts[code] || 0) / base.n : 0);
+    const nowCount = cur.counts[code] || 0;
+    const now = cur.n > 0 ? 100 * nowCount / cur.n : 0;
+    const extinct = nowCount === 0 && startCount > 0;
+    const delta = now - start;
+    if (Math.abs(delta) > 1e-9 || extinct) rows.push({code, start, now, delta, extinct, isNew});
+  });
+  if (!rows.length) return {msg: 'Run a step to see results', rows, nStart};
+  return {msg: null, rows, nStart};
+}
+
+function winnersLayout(rows, depth){
+  const gain = rows.filter(r => r.delta > 0 && !r.extinct).sort((a, b) => b.delta - a.delta || a.code.localeCompare(b.code));
+  const decl = rows.filter(r => r.delta < 0 && !r.extinct).sort((a, b) => b.delta - a.delta || a.code.localeCompare(b.code)); // least negative first
+  const ext  = rows.filter(r => r.extinct).sort((a, b) => b.start - a.start || a.code.localeCompare(b.code));
+  const showAll = depth === 0 || rows.length <= 2 * depth;
+  const g = showAll ? gain : gain.slice(0, depth);
+  const d = showAll ? decl : decl.slice(-depth);       // keep the biggest declines
+  const e = showAll ? ext  : ext.slice(0, depth);
+  const list = [];
+  g.forEach(r => list.push({...r, kind: 'gain'}));
+  d.forEach(r => list.push({...r, kind: 'decl'}));
+  if (e.length){
+    list.push({divider: true, label: `Extinct (${ext.length})` + (e.length < ext.length ? ` · showing ${e.length}` : '')});
+    e.forEach(r => list.push({...r, kind: 'ext'}));
+  }
+  return {list, gain, decl, ext, shown: {g: g.length, d: d.length, e: e.length}, showAll};
+}
+
+function makeHatch(ctx){
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const x = c.getContext('2d');
+  x.fillStyle = '#3a2620'; x.fillRect(0, 0, 8, 8);
+  x.strokeStyle = '#B5654A'; x.lineWidth = 1.5;
+  x.beginPath(); x.moveTo(-2, 10); x.lineTo(10, -2); x.moveTo(-2, 2); x.lineTo(2, -2); x.moveTo(6, 10); x.lineTo(10, 6); x.stroke();
+  return ctx.createPattern(c, 'repeat');
+}
+
+const winnersDivider = {
+  id: 'winnersDivider',
+  afterDatasetsDraw(chart){
+    const idx = winnersList.findIndex(r => r.divider);
+    if (idx < 0 || !chart.scales.y) return;
+    const y = chart.scales.y.getPixelForValue(idx), a = chart.chartArea, ctx = chart.ctx;
+    ctx.save(); ctx.strokeStyle = cssVar('--amber') || '#E3A857'; ctx.globalAlpha = 0.5;
+    ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(a.left, y); ctx.lineTo(a.right, y); ctx.stroke(); ctx.restore();
+  }
+};
+const winnersValueLabels = {
+  id: 'winnersValues',
+  afterDatasetsDraw(chart){
+    const meta = chart.getDatasetMeta(0), ctx = chart.ctx;
+    ctx.save();
+    ctx.font = "10px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = cssVar('--text') || '#E7ECE6';
+    ctx.textBaseline = 'middle';
+    meta.data.forEach((bar, i) => {
+      const r = winnersList[i];
+      if (!r || r.divider || !Number.isFinite(r.delta)) return;
+      const v = r.delta;
+      ctx.textAlign = v >= 0 ? 'left' : 'right';
+      ctx.fillText((v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2), bar.x + (v >= 0 ? 5 : -5), bar.y);
+    });
+    ctx.restore();
+  }
+};
+
+function winnersLabel(r){
+  return r.divider ? r.label : (r.kind === 'ext' ? '✕ ' : '') + r.code + (r.isNew ? ' (new)' : '');
+}
+
+function destroyWinnersChart(){
+  if (charts.winners){ charts.winners.destroy(); delete charts.winners; }
+}
+
+function renderWinners(){
+  const wd = winnersData();
+  const chips = document.getElementById('winners-chips');
+  const inner = document.getElementById('winners-inner');
+  const scroll = document.getElementById('winners-scroll');
+  const empty = document.getElementById('winners-empty');
+  const foot = document.getElementById('winners-foot');
+  const depth = winnersDepth;
+  const L = wd.msg ? null : winnersLayout(wd.rows, depth || 0);
+
+  if (wd.msg){
+    winnersList = [];
+    destroyWinnersChart();
+    chips.innerHTML = ''; foot.textContent = '';
+    scroll.style.display = 'none';
+    empty.style.display = 'flex'; empty.textContent = wd.msg;
+    return;
+  }
+  empty.style.display = 'none';
+  scroll.style.display = 'block';
+
+  const nNew = wd.rows.filter(r => r.isNew).length;
+  chips.innerHTML =
+    `<span class="g">▲ <b>${L.gain.length}</b> gained</span>` +
+    `<span class="r">▼ <b>${L.decl.length}</b> declined</span>` +
+    `<span class="x">✕ <b>${L.ext.length}</b> extinct</span>` +
+    (nNew ? `<span class="n">＋ <b>${nNew}</b> added mid-run</span>` : '') +
+    `<span>of ${wd.nStart} species at the start</span>`;
+  foot.textContent = L.showAll
+    ? `Showing all ${wd.rows.length} species that changed.`
+    : `Showing up to ${depth} per group (${L.shown.g} of ${L.gain.length} gainers, ${L.shown.d} of ${L.decl.length} declined, ${L.shown.e} of ${L.ext.length} extinct). Pick “All” to see every species.`;
+
+  const list = L.list;
+  winnersList = list;
+  inner.style.height = (list.length * WIN_ROW + 70) + 'px';
+
+  const line = cssVar('--line') || '#24322B';
+  const text = cssVar('--text') || '#E7ECE6';
+  const amber = cssVar('--amber') || '#E3A857';
+  const moss = '#7FB069', rust = '#B5654A';
+  if (!charts.winners){
+    const canvas = document.getElementById('chart_winners');
+    charts.winners = new Chart(canvas, {
+      type: 'bar',
+      data: {labels: [], datasets: [{data: [], borderRadius: 2, barPercentage: 0.78, categoryPercentage: 1}]},
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false,
+        scales: {
+          x: {position: 'top', grace: '14%', title: {display: true, text: 'change in share (percentage points)'},
+              grid: {color: line}, border: {color: line}},
+          y: {grid: {display: false}, border: {color: line},
+              ticks: {autoSkip: false, color: c => {
+                const r = winnersList[c.index];
+                return !r ? text : r.divider ? amber : r.kind === 'ext' ? '#d98d72' : text;
+              }}}
+        },
+        plugins: {
+          legend: {display: false},
+          tooltip: {
+            backgroundColor: '#0B1210', borderColor: line, borderWidth: 1,
+            titleColor: text, bodyColor: text, padding: 8, displayColors: false,
+            filter: item => { const r = winnersList[item.dataIndex]; return !!r && !r.divider; },
+            callbacks: {
+              title: items => { const r = winnersList[items[0].dataIndex]; return r ? r.code : ''; },
+              label: item => {
+                const r = winnersList[item.dataIndex];
+                return [
+                  ` ${r.delta >= 0 ? '+' : '−'}${Math.abs(r.delta).toFixed(2)} pp`,
+                  ` ${r.start.toFixed(2)}% → ${r.now.toFixed(2)}%`,
+                  ...(r.kind === 'ext' ? [' extinct from this plot'] : []),
+                  ...(r.isNew ? [' added mid-run; measured from when added'] : [])
+                ];
+              }
+            }
+          }
+        }
+      },
+      plugins: [panelBackground, winnersDivider, winnersValueLabels]
+    });
+  }
+  const ch = charts.winners;
+  if (!winnersHatch) winnersHatch = makeHatch(ch.ctx);
+  const ds = ch.data.datasets[0];
+  ch.data.labels = list.map(winnersLabel);
+  ds.data = list.map(r => r.divider ? null : r.delta);
+  ds.backgroundColor = list.map(r => r.divider ? 'transparent' : r.kind === 'gain' ? moss : r.kind === 'decl' ? rust : winnersHatch);
+  ds.borderColor = list.map(r => r.kind === 'ext' ? rust : 'transparent');
+  ds.borderWidth = list.map(r => r.kind === 'ext' ? 1 : 0);
+  ch.resize();
+  ch.update('none');
+}
+
+document.querySelectorAll('#winners-depth button').forEach(b => b.addEventListener('click', () => {
+  winnersDepth = Number(b.dataset.d);
+  document.querySelectorAll('#winners-depth button').forEach(x => x.classList.toggle('on', x === b));
+  if (activeTab === 'summary'){
+    try { renderWinners(); } catch(e){ console.error('[winners chart error]', e); }
+  }
+}));
+
+function updateSummaryCharts(){
+  if (!ensureCharts()) return;
+  const h = metricsHistory;
+  const hasSteps = h.length > 1;
+  const series = key => hasSteps
+    ? h.filter(r => r[key] !== null && r[key] !== undefined).map(r => ({x: r.years, y: r[key]}))
+    : [];
+
+  charts.dbh.data.datasets[0].data      = series('meanDbh');
+  charts.shading.data.datasets[0].data  = series('meanShading');
+  charts.turnover.data.datasets[0].data = series('turnoverPct');
+  charts.richness.data.datasets[0].data = series('richness');
+
+  const pct = r => r.n > 0 ? r.bins.map(c => 100 * c / r.n) : r.bins.map(() => 0);
+  const lastRow = h[h.length - 1];
+  charts.hist.data.datasets[0].data  = hasSteps ? pct(h[0]) : [];
+  charts.hist.data.datasets[1].data  = hasSteps ? pct(lastRow) : [];
+  charts.hist.data.datasets[1].label = hasSteps ? `Current (step ${lastRow.step})` : 'Current';
+
+  Object.entries(charts).forEach(([k, c]) => { if (k !== 'winners') c.update('none'); });
+  renderWinners();
+}
+
+// ---- PNG export -------------------------------------------------------------
+const CHART_TITLES = {
+  dbh: 'Mean DBH (cm)', shading: 'Mean shading', turnover: 'Turnover (% of trees dying per step)',
+  richness: 'Species richness', winners: 'Winners and losers: change in species share (percentage points)',
+  hist: 'DBH size classes (% of living trees)'
+};
+function downloadChart(key){
+  const chart = charts[key];
+  if (!chart || (key === 'winners' && !winnersList.length)){ alert('Open the Summary tab and run a step first.'); return; }
+  const src = chart.canvas;
+  const k = src.width / chart.width;                 // device-pixel ratio actually used
+  const headerH = Math.round(40 * k);
+  const out = document.createElement('canvas');
+  out.width = src.width;
+  out.height = src.height + headerH;
+  const c = out.getContext('2d');
+  c.fillStyle = cssVar('--panel') || '#121B17';
+  c.fillRect(0, 0, out.width, out.height);
+  const last = metricsHistory[metricsHistory.length - 1];
+  c.fillStyle = cssVar('--text') || '#E7ECE6';
+  c.font = `600 ${Math.round(14 * k)}px 'Space Grotesk', sans-serif`;
+  c.textBaseline = 'middle';
+  c.fillText(CHART_TITLES[key] || key, Math.round(14 * k), Math.round(15 * k));
+  c.fillStyle = cssVar('--text-muted') || '#8FA398';
+  c.font = `${Math.round(10 * k)}px 'IBM Plex Mono', monospace`;
+  const sub = last ? `Forest Dynamics · step ${last.step} · ${last.years.toFixed(0)} yr · ${last.n} trees` : 'Forest Dynamics';
+  c.fillText(sub, Math.round(14 * k), Math.round(31 * k));
+  c.drawImage(src, 0, headerH);
+  const a = document.createElement('a');
+  a.href = out.toDataURL('image/png');
+  a.download = `forest_${key}_step${last ? last.step : 0}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+document.querySelectorAll('#summary-view button.dl').forEach(b => {
+  b.addEventListener('click', () => downloadChart(b.dataset.chart));
+});
+
+// ---- Tabs ---------------------------------------------------------------------
+function switchTab(name){
+  activeTab = name;
+  document.querySelectorAll('#tabs .tab').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.getElementById('canvas-wrap').classList.toggle('hidden', name !== 'forest');
+  document.getElementById('summary-view').classList.toggle('hidden', name !== 'summary');
+  if (name === 'summary'){
+    try {
+      updateSummaryCharts();
+      // The panel was display:none until just now, so let Chart.js re-measure it.
+      requestAnimationFrame(() => Object.values(charts).forEach(c => c.resize()));
+    } catch(e){ console.error('[summary charts error]', e); }
+  } else {
+    resizeCanvas();  // window may have been resized while this tab was hidden
+  }
+}
+document.querySelectorAll('#tabs .tab').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 resizeCanvas();
-loadSpeciesList();
-initSim();
+updateDataSourceUI();  // sync panel visibility to the default-checked radio (procedural) on load
+(async () => {
+  await loadSpeciesList();  // must finish first — "All" mode depends on allSpeciesNames being populated
+  initSim();
+})();
 requestAnimationFrame(render);
 </script>
 </body>

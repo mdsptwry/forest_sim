@@ -1,0 +1,453 @@
+# plumber.R
+# ============================================================
+
+# Run it with:
+#   plumber::plumb("plumber.R") |> plumber::pr_run(port = 8000)
+
+library(plumber)
+library(dplyr)
+library(tibble)
+# NOTE: was library(tidyverse) — that also loads ggplot2, readr, lubridate,
+# forcats, stringr, none of which anything in this file or the sourced R/
+# files actually uses. main.R needs the full tidyverse (it plots); this API
+# process doesn't, and unused packages are permanent baseline memory cost
+# for the container's entire lifetime. If something below throws a "could
+# not find function" error after this change, it means some sourced file
+# does rely on another tidyverse package after all — add it back
+# specifically rather than reverting to the full bundle.
+
+source("R/allometry.R")
+source("R/spatial_functions.R")
+source("R/shading.R")
+source("R/growth.R")
+source("R/mortality.R")
+source("R/recruitment.R")
+
+# ---- helper: load a real BCI census file (cached, trimmed) --------------
+# Caches each census in memory after its first load, so repeated requests
+# don't re-read and re-parse the same ~423k-row file from disk every single
+# time — this was happening on EVERY /init_from_census call before,
+# regardless of how many trees were actually requested. Also trims to only
+# the 6 columns this app actually uses — the raw file has 16 (tag, quadrat,
+# stemID, hom, ExactDate, codes, date, nostems, agb, ba, ...) that were
+# getting carried through every downstream filter/mutate for no benefit.
+# Bounded worst case: at most 8 census files ever cached (one per real
+# census), each much smaller post-trim than the full raw table.
+.census_cache <- new.env(parent = emptyenv())
+
+load_census <- function(census_number) {
+  cache_key <- as.character(census_number)
+  if (!is.null(.census_cache[[cache_key]])) {
+    return(.census_cache[[cache_key]])
+  }
+
+  path <- sprintf("data/bci.tree%d.rdata", census_number)
+  if (!file.exists(path)) {
+    stop(sprintf("Census file not found: %s", path))
+  }
+  e <- new.env()
+  load(path, envir = e)
+  obj_name <- sprintf("bci.tree%d", census_number)
+  if (!exists(obj_name, envir = e)) {
+    loaded_names <- ls(e)
+    if (length(loaded_names) == 1) {
+      obj_name <- loaded_names[1]
+    } else {
+      stop(sprintf(
+        "Could not find object '%s' in %s. Objects found instead: %s",
+        obj_name, path, paste(loaded_names, collapse = ", ")
+      ))
+    }
+  }
+  raw <- get(obj_name, envir = e)
+  raw <- raw[, c("treeID", "sp", "gx", "gy", "dbh", "status")]
+
+  .census_cache[[cache_key]] <- raw
+  raw
+}
+
+# ---- Serve the front-end -----------------------------------------------
+
+#* @assets ./www /
+list()
+
+# ---- Species allometry parameters (real BCI data) -------------------------
+species_params <- read.csv("data/species_allometry_params.csv")
+
+# ---- Full species pool (all ~307 species, from real census data) ----------
+# Wrapped in a function (not evaluated at top level) so intermediate objects
+# don't linger in global memory after this runs once at startup.
+build_full_species_pool <- function() {
+  tryCatch({
+    raw <- load_census(1)
+    alive_rows <- raw[raw$status %in% c("A", "AD", "AM", "AR"), ]
+    codes <- unique(alive_rows$sp)
+    codes <- codes[!is.na(codes) & codes != ""]
+    sort(codes)
+  }, error = function(e) {
+    message("Could not load census 1 to build the full species pool (", conditionMessage(e),
+            "). Falling back to the 162 species in species_allometry_params.csv.")
+    sort(unique(species_params$species))
+  })
+}
+full_species_pool <- build_full_species_pool()
+message(sprintf("Full species pool loaded: %d species (%d have real fitted allometry).",
+                 length(full_species_pool), sum(full_species_pool %in% species_params$species)))
+
+# ---- Real DBH distribution (for procedural generation) ---------------------
+# Per-species, pooled across all 8 real censuses, deduplicated to ONE
+# randomly-chosen measurement per unique real tree.
+#
+# Why dedup matters: a naive pool of every (census, tree) alive-status row
+# lets a long-lived tree contribute one observation per census it survived —
+# all from progressively LATER, LARGER points in its growth. A tree tracked
+# across 6 censuses gets 6 votes, all skewed toward its bigger, older sizes;
+# a tree only ever seen once gets 1. That systematically inflates the pooled
+# distribution's mean above what any single real census snapshot actually
+# looks like — confirmed empirically (procedural mean ~10cm vs. a single
+# real census's ~5cm). Deduplicating to one random measurement per tree ID
+# removes that inflation mechanism entirely, while still keeping every
+# distinct real individual (so a species only recruited starting in a later
+# census is still represented — genuine breadth is preserved, only the
+# double-counting of the SAME individual is removed).
+#
+# A global pool (all species combined) is kept as the fallback for species
+# with too little species-specific data to draw from reliably — a handful
+# of real measurements would otherwise make every procedural tree of that
+# species look nearly identical, recreating the "too uniform" problem this
+# fix is meant to solve, just at the species level.
+#
+# Honest tradeoff: caching all 8 censuses (vs. just census 1) is a real,
+# permanent memory cost for the container's whole lifetime, directly
+# competing with headroom set aside for pushing toward higher tree counts.
+# Worth watching Render's memory graph after this change alongside whatever
+# tree-count testing is still in progress.
+MIN_SPECIES_DBH_SAMPLES <- 5
+
+build_species_dbh_pools <- function() {
+  tryCatch({
+    all_dbh <- lapply(1:8, function(cn) {
+      raw <- load_census(cn)
+      alive <- raw[raw$status %in% c("A", "AD", "AM", "AR") &
+                     !is.na(raw$dbh) & !is.na(raw$sp) & raw$sp != "", ]
+      data.frame(id = alive$treeID, species = alive$sp, dbh_cm = alive$dbh / 10)
+    })
+    combined <- do.call(rbind, all_dbh)
+    combined <- combined[!is.na(combined$dbh_cm) & combined$dbh_cm > 0, ]
+
+    # One random measurement per unique real tree: shuffle rows, then keep
+    # the first occurrence of each tree id — since order is now random,
+    # "first" is equivalent to "a uniformly random pick" per tree.
+    combined <- combined[sample(nrow(combined)), ]
+    combined <- combined[!duplicated(combined$id), ]
+
+    split(combined$dbh_cm, combined$species)
+  }, error = function(e) {
+    message("Could not build per-species DBH pools (", conditionMessage(e),
+            "). Falling back to log-normal sampling.")
+    NULL
+  })
+}
+species_dbh_pools <- build_species_dbh_pools()
+gc()  # reclaim the temporary combined table now that it's split into pools
+
+# Global pool, kept as the fallback for species with too little data.
+real_dbh_pool <- if (!is.null(species_dbh_pools)) unlist(species_dbh_pools, use.names = FALSE) else NULL
+if (!is.null(real_dbh_pool)) {
+  message(sprintf("Per-species DBH pools loaded: %d species, %d total measurements pooled across 8 censuses (global range %.1f-%.1f cm).",
+                   length(species_dbh_pools), length(real_dbh_pool), min(real_dbh_pool), max(real_dbh_pool)))
+}
+
+# Draws one DBH value per tree, matched to that tree's own assigned species.
+sample_dbh_for_species <- function(species_vec) {
+  n <- length(species_vec)
+  if (is.null(species_dbh_pools) || is.null(real_dbh_pool)) {
+    return(pmin(pmax(rlnorm(n, meanlog = log(5.5) - 0.9^2 / 2, sdlog = 0.9), 1), 80))
+  }
+
+  out <- numeric(n)
+  for (sp in unique(species_vec)) {
+    idx  <- which(species_vec == sp)
+    pool <- species_dbh_pools[[sp]]
+    if (is.null(pool) || length(pool) < MIN_SPECIES_DBH_SAMPLES) {
+      pool <- real_dbh_pool  # not enough species-specific data — use the global pool instead
+    }
+    out[idx] <- sample(pool, length(idx), replace = TRUE)
+  }
+  out
+}
+
+# ---- helper: resolve a set of species names into a full params table ------
+
+resolve_species_subset <- function(names) {
+  global_a  <- median(species_params$a,  na.rm = TRUE)
+  global_b  <- median(species_params$b,  na.rm = TRUE)
+  global_ta <- median(species_params$ta, na.rm = TRUE)
+  global_tb <- median(species_params$tb, na.rm = TRUE)
+  global_tk <- median(species_params$tk, na.rm = TRUE)
+
+  tibble(species = names) |>
+    left_join(species_params, by = "species") |>
+    mutate(
+      a  = ifelse(is.na(a),  global_a,  a),
+      b  = ifelse(is.na(b),  global_b,  b),
+      ta = ifelse(is.na(ta), global_ta, ta),
+      tb = ifelse(is.na(tb), global_tb, tb),
+      tk = ifelse(is.na(tk), global_tk, tk)
+    )
+}
+
+# Stratified species sample:
+stratified_species_sample <- function(species_names, n_trees) {
+  n_species <- length(species_names)
+  if (n_species == 0) return(character(0))
+  
+  if (n_trees <= n_species) {
+    # Not enough budget to cover every species. Sample without replacement
+    # so we cover as many distinct species as the budget allows, rather
+    # than letting a few species dominate purely by sampling order.
+    return(sample(species_names, n_trees))
+  }
+  
+  guaranteed <- species_names                          # exactly one of each
+  filler     <- sample(species_names, n_trees - n_species, replace = TRUE)
+  
+  sample(c(guaranteed, filler))  # shuffle so the guaranteed slots aren't clustered at low id values
+}
+
+# ---- helper: procedural initial layout ------------------------------------
+generate_layout <- function(n_trees, plot_width, plot_height,
+                            n_clusters = 15, cluster_fraction = 0.25) {
+  x <- runif(n_trees, 0, plot_width)
+  y <- runif(n_trees, 0, plot_height)
+  
+  n_clustered <- round(n_trees * cluster_fraction)
+  if (n_clustered > 0) {
+    hotspots <- tibble(
+      cx = runif(n_clusters, 0, plot_width),
+      cy = runif(n_clusters, 0, plot_height)
+    )
+    clustered_idx    <- sample(seq_len(n_trees), n_clustered)
+    assigned_cluster <- sample(seq_len(n_clusters), n_clustered, replace = TRUE)
+    x[clustered_idx] <- hotspots$cx[assigned_cluster] + rnorm(n_clustered, 0, plot_width  * 0.02)
+    y[clustered_idx] <- hotspots$cy[assigned_cluster] + rnorm(n_clustered, 0, plot_height * 0.02)
+  }
+  
+  tibble(
+    x = pmin(pmax(x, 0), plot_width),
+    y = pmin(pmax(y, 0), plot_height)
+  )
+}
+
+
+
+# ---- CORS ------------------------------------------------------------------
+#* @filter cors
+function(req, res) {
+  res$setHeader("Access-Control-Allow-Origin", "*")
+  if (req$REQUEST_METHOD == "OPTIONS") {
+    res$setHeader("Access-Control-Allow-Methods", "*")
+    res$setHeader("Access-Control-Allow-Headers", req$HTTP_ACCESS_CONTROL_REQUEST_HEADERS)
+    res$status <- 200
+    return(list())
+  }
+  plumber::forward()
+}
+
+#* List all available species (for the species picker UI)
+#* @get /species
+function() {
+  list(species = full_species_pool)
+}
+
+#* Add more trees (and optionally new species) to an existing forest,
+#* without touching any existing trees.
+#* @post /add_trees
+function(n_new_trees = 100, n_new_species = 0, new_species_list = NULL,
+         existing_species = NULL, next_id = 1,
+         plot_width = 1000, plot_height = 500) {
+
+  n_new_trees <- as.integer(n_new_trees)
+  next_id     <- as.integer(next_id)
+  plot_width  <- as.numeric(plot_width)
+  plot_height <- as.numeric(plot_height)
+
+  existing_species <- if (is.null(existing_species)) character(0) else existing_species
+
+  new_names <- character(0)
+  if (!is.null(new_species_list) && length(new_species_list) > 0) {
+    new_names <- new_species_list
+  } else if (as.integer(n_new_species) > 0) {
+    candidates <- setdiff(full_species_pool, existing_species)
+    n_pick <- min(as.integer(n_new_species), length(candidates))
+    if (n_pick > 0) new_names <- sample(candidates, n_pick)
+  }
+
+  all_names <- union(existing_species, new_names)
+  if (length(all_names) == 0) all_names <- sample(full_species_pool, 1)
+  species_pool <- resolve_species_subset(all_names)
+
+  layout <- generate_layout(n_new_trees, plot_width, plot_height)
+
+  new_trees <- tibble(
+    id       = seq(next_id, next_id + n_new_trees - 1),
+    species  = stratified_species_sample(species_pool$species, n_new_trees),
+    x        = layout$x,
+    y        = layout$y,
+    dbh_cm   = sample_dbh_for_species(species),
+    alive    = TRUE,
+    age_days = 0
+  )
+
+  new_trees <- attach_species_params(new_trees, species_pool)
+  new_trees <- update_allometry(new_trees)
+  new_trees$shading <- 0
+  new_trees$overlap <- 0
+
+  list(
+    new_trees     = new_trees,
+    added_species = species_pool |> filter(!species %in% existing_species)
+  )
+}
+
+#* Initialize a forest by sampling real trees from a real BCI census
+#* @post /init_from_census
+function(census = 1, n_trees = 2000, selected_species = NULL, plot_width = 1000, plot_height = 500) {
+  census      <- as.integer(census)
+  n_trees     <- as.integer(n_trees)
+  plot_width  <- as.numeric(plot_width)
+  plot_height <- as.numeric(plot_height)
+
+  raw <- load_census(census)
+
+  census_data <- raw |>
+    filter(status %in% c("A", "AD", "AM", "AR")) |>
+    filter(!is.na(dbh) & !is.na(gx) & !is.na(gy)) |>
+    mutate(dbh = dbh / 10) |>
+    rename(id = treeID, x = gx, y = gy, species = sp, dbh_cm = dbh) |>
+    filter(dbh_cm > 0, x >= 0, x <= plot_width, y >= 0, y <= plot_height)
+
+  if (!is.null(selected_species) && length(selected_species) > 0) {
+    census_data <- census_data |> filter(species %in% selected_species)
+  }
+
+  n_available <- nrow(census_data)
+  if (n_available == 0) {
+    stop(sprintf("No usable trees found in census %d after filtering.", census))
+  }
+  n_trees <- min(n_trees, n_available)
+  
+  census_data <- census_data |> mutate(.row_id = row_number())
+
+  one_per_species <- census_data |>
+    group_by(species) |>
+    slice_sample(n = 1) |>
+    ungroup()
+
+  if (nrow(one_per_species) > n_trees) {
+    one_per_species <- one_per_species |> slice_sample(n = n_trees)
+  }
+
+  remaining_slots <- n_trees - nrow(one_per_species)
+  remaining_pool <- census_data |> filter(!.row_id %in% one_per_species$.row_id)
+  fill <- if (remaining_slots > 0 && nrow(remaining_pool) > 0) {
+    remaining_pool |> slice_sample(n = min(remaining_slots, nrow(remaining_pool)))
+  } else {
+    remaining_pool[0, ]
+  }
+
+  forest <- bind_rows(one_per_species, fill) |>
+    select(species, x, y, dbh_cm) |>
+    mutate(alive = TRUE, age_days = 0, id = row_number())
+
+  forest <- attach_species_params(forest, species_params)
+  forest <- update_allometry(forest)
+  forest <- calculate_shading(forest)
+
+  species_in_sample <- unique(forest$species)
+  species_subset <- resolve_species_subset(species_in_sample)
+
+  list(
+    forest             = forest,
+    species_params     = species_subset,
+    plot_width         = plot_width,
+    plot_height        = plot_height,
+    n_available        = n_available,
+    n_sampled          = nrow(forest),
+    n_species_available = length(unique(census_data$species)),
+    n_species_sampled   = length(species_in_sample)
+  )
+}
+
+#* Initialize a demo forest
+#* @post /init
+function(n_trees = 2000, n_species = 8, selected_species = NULL, plot_width = 1000, plot_height = 500) {
+  n_trees     <- as.integer(n_trees)
+  plot_width  <- as.numeric(plot_width)
+  plot_height <- as.numeric(plot_height)
+
+  if (!is.null(selected_species) && length(selected_species) > 0) {
+    species_subset <- resolve_species_subset(selected_species)
+  } else {
+    n_species <- min(as.integer(n_species), length(full_species_pool))
+    chosen_names <- sample(full_species_pool, n_species)
+    species_subset <- resolve_species_subset(chosen_names)
+  }
+
+  layout <- generate_layout(n_trees, plot_width, plot_height)
+
+  forest <- tibble(
+    id       = seq_len(n_trees),
+    species  = stratified_species_sample(species_subset$species, n_trees),
+    x        = layout$x,
+    y        = layout$y,
+    dbh_cm   = sample_dbh_for_species(species),
+    alive    = TRUE,
+    age_days = 0
+  )
+
+  forest <- attach_species_params(forest, species_subset)
+  forest <- update_allometry(forest)
+  forest <- calculate_shading(forest)
+
+  list(
+    forest         = forest,
+    species_params = species_subset,
+    plot_width     = plot_width,
+    plot_height    = plot_height
+  )
+}
+
+#* Advance the simulation by one real time-step
+#* @post /step
+function(req) {
+  body <- jsonlite::fromJSON(req$postBody, simplifyDataFrame = TRUE)
+  forest         <- as_tibble(body$forest)
+  sim_config     <- body$sim_config
+  species_subset <- as_tibble(body$species_params)
+  forest <- forest |>
+    select(any_of(c("id", "species", "x", "y", "dbh_cm", "alive", "age_days")))
+  forest <- attach_species_params(forest, species_subset)
+  forest <- update_allometry(forest)
+  forest <- calculate_shading(forest)
+  forest <- update_growth(forest, sim_config)
+  mortality_result <- update_mortality(forest, sim_config)
+  forest <- mortality_result$forest
+  deaths <- mortality_result$deaths
+  if (deaths > 0) {
+    forest <- recruit_trees(forest, sim_config, species_subset)
+  }
+  forest <- update_allometry(forest)
+  forest_out <- forest |>
+    select(id, species, x, y, dbh_cm, alive, age_days,
+           height_m, crown_area_m2, crown_radius_m, shading, overlap)
+  list(
+    forest = forest_out,
+    metrics = list(
+      n_alive      = sum(forest$alive),
+      mean_dbh     = mean(forest$dbh_cm[forest$alive], na.rm = TRUE),
+      mean_shading = mean(forest$shading[forest$alive], na.rm = TRUE),
+      deaths       = deaths
+    )
+  )
+}
